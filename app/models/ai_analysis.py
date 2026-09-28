@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.connection import Base
@@ -15,9 +15,9 @@ class AIAnalysis(Base):
     )
 
     ticket_id: Mapped[int] = mapped_column(
-    ForeignKey("tickets.id"),
-    nullable=False,
-    unique=True,
+        ForeignKey("tickets.id"),
+        nullable=False,
+        unique=True,
     )
 
     model_name: Mapped[str] = mapped_column(
@@ -41,6 +41,31 @@ class AIAnalysis(Base):
     )
 
     suggested_response: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+
+    detected_issue: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+
+    recommended_action: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+
+    confidence: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+    )
+
+    human_escalation: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+    )
+
+    customer_response: Mapped[str] = mapped_column(
         Text,
         nullable=False,
     )

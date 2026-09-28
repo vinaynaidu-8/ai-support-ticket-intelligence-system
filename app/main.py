@@ -10,7 +10,11 @@ from app.models.ticket import Ticket
 from app.models.ticket_message import TicketMessage
 from app.models.ai_analysis import AIAnalysis
 
-from app.schemas.user import UserCreate, UserLogin
+from app.schemas.user import (
+    UserRegistration,
+    StaffUserCreate,
+    UserLogin,
+)
 from app.schemas.ticket import (
     TicketCreate,
     MessageCreate,
@@ -21,12 +25,11 @@ from app.schemas.ticket import (
 from app.schemas.ai_analysis import AIAnalysisResponse
 
 from app.security.auth import get_current_user
-from app.security.authorization import require_role
+from app.security.authorization import require_role, require_roles
 from app.security.jwt import create_access_token
 from app.security.password import hash_password, verify_password
 
-from app.services.llm.gemini import analyze_ticket
-from app.services.ai_analysis import save_ai_analysis
+from app.services.ai_orchestrator import analyze_and_store_ticket
 
 
 app = FastAPI(title=settings.app_name)
@@ -38,20 +41,14 @@ Base.metadata.create_all(bind=engine)
 def root():
     return {
         "message": f"{settings.app_name} is running",
-        "environment": settings.app_env,
     }
 
-
-@app.get("/db-test")
-def database_test():
-    with engine.connect() as connection:
-        result = connection.execute(text("SELECT 1"))
-        return {"database": result.scalar()}
-
-
-@app.post("/users")
-def create_user(
-    user_data: UserCreate,
+@app.post("/admin/users/support-agent")
+def create_support_agent(
+    user_data: StaffUserCreate,
+    current_user: User = Depends(
+        require_roles("support_manager", "admin")
+    ),
     db: Session = Depends(get_db),
 ):
     existing_user = db.query(User).filter(
@@ -68,7 +65,114 @@ def create_user(
         name=user_data.name,
         email=user_data.email,
         password_hash=hash_password(user_data.password),
-        role=user_data.role,
+        role="support_agent",
+    )
+
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    return {
+        "id": user.id,
+        "name": user.name,
+        "email": user.email,
+        "role": user.role,
+    }
+
+
+@app.post("/admin/users/support-manager")
+def create_support_manager(
+    user_data: StaffUserCreate,
+    current_user: User = Depends(
+        require_role("admin")
+    ),
+    db: Session = Depends(get_db),
+):
+    existing_user = db.query(User).filter(
+        User.email == user_data.email
+    ).first()
+
+    if existing_user:
+        raise HTTPException(
+            status_code=409,
+            detail="Email already registered",
+        )
+
+    user = User(
+        name=user_data.name,
+        email=user_data.email,
+        password_hash=hash_password(user_data.password),
+        role="support_manager",
+    )
+
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    return {
+        "id": user.id,
+        "name": user.name,
+        "email": user.email,
+        "role": user.role,
+    }
+
+@app.post("/admin/users/admin")
+def create_admin(
+    user_data: StaffUserCreate,
+    current_user: User = Depends(
+        require_role("admin")
+    ),
+    db: Session = Depends(get_db),
+):
+    existing_user = db.query(User).filter(
+        User.email == user_data.email
+    ).first()
+
+    if existing_user:
+        raise HTTPException(
+            status_code=409,
+            detail="Email already registered",
+        )
+
+    user = User(
+        name=user_data.name,
+        email=user_data.email,
+        password_hash=hash_password(user_data.password),
+        role="admin",
+    )
+
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    return {
+        "id": user.id,
+        "name": user.name,
+        "email": user.email,
+        "role": user.role,
+    }
+
+
+@app.post("/users/register")
+def register_customer(
+    user_data: UserRegistration,
+    db: Session = Depends(get_db),
+):
+    existing_user = db.query(User).filter(
+        User.email == user_data.email
+    ).first()
+
+    if existing_user:
+        raise HTTPException(
+            status_code=409,
+            detail="Email already registered",
+        )
+
+    user = User(
+        name=user_data.name,
+        email=user_data.email,
+        password_hash=hash_password(user_data.password),
+        role="customer",
     )
 
     db.add(user)
@@ -167,21 +271,9 @@ def create_ticket(
     # AI analysis is an enhancement.
     # Ticket creation should still succeed if Gemini fails.
     try:
-        analysis = analyze_ticket(
-            subject=ticket.subject,
-            description=ticket.description,
-            category=ticket.category,
-            priority=ticket.priority,
-        )
-
-        save_ai_analysis(
+        analyze_and_store_ticket(
             db=db,
-            ticket_id=ticket.id,
-            model_name="gemini-3.6-flash",
-            summary=analysis.summary,
-            suggested_category=analysis.suggested_category,
-            suggested_priority=analysis.suggested_priority,
-            suggested_response=analysis.suggested_response,
+            ticket=ticket,
         )
 
     except Exception as e:
@@ -301,7 +393,7 @@ def get_agent_tickets(
 @app.get(
     "/agent/tickets/{ticket_id}/ai-analysis",
     response_model=AIAnalysisResponse,
-)   
+)
 def get_ticket_ai_analysis(
     ticket_id: int,
     current_user: User = Depends(require_role("support_agent")),
@@ -334,7 +426,9 @@ def get_ticket_ai_analysis(
 def assign_ticket(
     ticket_id: int,
     assignment: TicketAssignment,
-    current_user: User = Depends(require_role("support_agent")),
+    current_user: User = Depends(
+    require_roles("support_manager", "admin")
+),
     db: Session = Depends(get_db),
 ):
     agent = db.query(User).filter(

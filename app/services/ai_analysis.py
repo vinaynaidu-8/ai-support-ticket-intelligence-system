@@ -11,6 +11,11 @@ def save_ai_analysis(
     suggested_category: str,
     suggested_priority: str,
     suggested_response: str,
+    detected_issue: str,
+    recommended_action: str,
+    confidence: float,
+    human_escalation: bool,
+    customer_response: str,
 ) -> AIAnalysis:
 
     analysis = AIAnalysis(
@@ -20,6 +25,11 @@ def save_ai_analysis(
         suggested_category=suggested_category,
         suggested_priority=suggested_priority,
         suggested_response=suggested_response,
+        detected_issue=detected_issue,
+        recommended_action=recommended_action,
+        confidence=confidence,
+        human_escalation=human_escalation,
+        customer_response=customer_response,
     )
 
     try:
